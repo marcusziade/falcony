@@ -2,11 +2,10 @@ package main
 
 import (
 	"context"
-	"io"
 	"log"
 	"os"
+	"os/exec"
 
-	ytdl "github.com/kkdai/youtube/v2"
 	"google.golang.org/api/option"
 	"google.golang.org/api/youtube/v3"
 )
@@ -41,22 +40,21 @@ func main() {
 	}
 
 	videoID := response.Items[0].Id.VideoId
-	client := ytdl.Client{}
 
-	log.Println("Getting video details")
-	video := getVideoDetails(ctx, client, videoID)
+	log.Println("Downloading video using yt-dlp")
+	err := downloadVideo(videoID)
+	if err != nil {
+		log.Fatalf("Error downloading video: %v", err)
+	}
 
-	log.Println("Getting video stream")
-	stream := getVideoStream(ctx, client, video)
-
-	log.Println("Reading stream into buffer")
-	buf := readStreamIntoBuffer(stream)
-
-	log.Println("Writing buffer to file")
-	writeBufferToFile(video.Title, buf)
-
-	log.Println("Video downloaded successfully: " + video.Title + ".mp4")
+	log.Println("Video downloaded successfully: " + videoID + ".mp4")
 	writeLastDownloadDate(latestVideoDate)
+}
+
+func downloadVideo(videoID string) error {
+	cmd := exec.Command("yt-dlp", "-S", "ext:mp4:m4a", videoID)
+	err := cmd.Run()
+	return err
 }
 
 func getAPIKey() string {
@@ -86,51 +84,6 @@ func getLatestVideoFromChannel(service *youtube.Service, channelID string) *yout
 		log.Fatalf("Error making search API call: %v", err)
 	}
 	return response
-}
-
-func getVideoDetails(ctx context.Context, client ytdl.Client, videoID string) *ytdl.Video {
-	video, err := client.GetVideoContext(ctx, videoID)
-	if err != nil {
-		log.Fatalf("Error getting video details: %v", err)
-	}
-	return video
-}
-
-func getVideoStream(ctx context.Context, client ytdl.Client, video *ytdl.Video) io.ReadCloser {
-	stream, _, err := client.GetStreamContext(ctx, video, &video.Formats[0])
-	if err != nil {
-		log.Fatalf("Error getting video stream: %v", err)
-	}
-	return stream
-}
-
-func readStreamIntoBuffer(stream io.ReadCloser) []byte {
-	buf, err := io.ReadAll(stream)
-	if err != nil {
-		log.Fatalf("Error reading video stream: %v", err)
-	}
-	return buf
-}
-
-func writeBufferToFile(title string, buf []byte) {
-	if _, err := os.Stat("videos/"); os.IsNotExist(err) {
-		os.Mkdir("videos/", 0755)
-	}
-
-	file, err := os.Create("videos/" + title + ".mp4")
-	if err != nil {
-		log.Fatalf("Error creating file: %v", err)
-	}
-
-	_, err = file.Write(buf)
-	if err != nil {
-		log.Fatalf("Error writing to file: %v", err)
-	}
-
-	err = file.Close()
-	if err != nil {
-		log.Fatalf("Error closing file: %v", err)
-	}
 }
 
 func readLastDownloadDate() string {
