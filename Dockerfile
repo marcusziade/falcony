@@ -1,8 +1,8 @@
 # Start from the latest golang base image
 FROM golang:latest
 
-# Add Maintainer Info
-LABEL maintainer="Your Name <your.email@example.com>"
+RUN apt-get update && \
+    apt-get install -y ffmpeg
 
 # Set the Current Working Directory inside the container
 WORKDIR /app
