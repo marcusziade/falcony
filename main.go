@@ -1,118 +1,162 @@
 package main
 
 import (
+	"bufio"
 	"context"
-	"encoding/json"
-	"errors"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
-	"strings"
-	"time"
 
-	"github.com/chromedp/chromedp"
-	"github.com/kkdai/youtube/v2"
+	ytdl "github.com/kkdai/youtube/v2"
+	"google.golang.org/api/option"
+	"google.golang.org/api/youtube/v3"
 )
 
-const channelURL = "https://www.youtube.com/user/@goodgrief3308/videos"
-const historyFilePath = "videoHistory.json"
-
-func getLatestVideoURL(ctx context.Context) (string, string, error) {
-	log.Println("Navigating to channel...")
-	var videoURL, thumbnailURL string
-	err := chromedp.Run(ctx,
-		chromedp.Navigate(channelURL),
-		chromedp.WaitVisible(`a#thumbnail`, chromedp.ByQuery),
-		chromedp.AttributeValue(`a#thumbnail img`, "src", &thumbnailURL, nil),
-		chromedp.AttributeValue(`a#video-title-link`, "href", &videoURL, nil),
-	)
-	if videoURL == "" {
-		return "", "", errors.New("could not find video URL")
-	}
-	return "https://www.youtube.com" + videoURL, thumbnailURL, err
-}
-
-func handleFatalError(err error, msg string) {
-	if err != nil {
-		log.Fatalf("%s: %v", msg, err)
-	}
-}
-
-func bestFormat(formats youtube.FormatList) *youtube.Format {
-	log.Println("Determining best video format...")
-	formats.Sort()
-	return &formats[0]
-}
-
-func downloadVideo(ctx context.Context, videoURL string) {
-	log.Println("Initiating video download...")
-
-	client := youtube.Client{}
-
-	videoID, err := youtube.ExtractVideoID(videoURL)
-	handleFatalError(err, "extract video ID error")
-
-	video, err := client.GetVideo(videoID)
-	handleFatalError(err, "get video error")
-
-	stream, _, err := client.GetStream(video, bestFormat(video.Formats))
-	handleFatalError(err, "get video stream error")
-
-	sanitizedTitle := strings.Map(func(r rune) rune {
-		if r == os.PathSeparator || r == ':' {
-			return '_'
-		}
-		return r
-	}, video.Title)
-
-	file, err := os.Create(sanitizedTitle + ".mp4")
-	handleFatalError(err, "create file error")
-	defer file.Close()
-
-	log.Printf("Downloading video: %s...\n", video.Title)
-
-	log.Println("Download started at:", time.Now().Format(time.RFC1123))
-
-	_, err = io.Copy(file, stream)
-	handleFatalError(err, "download video error")
-
-	log.Println("Download completed at:", time.Now().Format(time.RFC1123))
-
-	log.Printf("Downloaded: %s\n", video.Title)
-}
-
 func main() {
-	log.Println("Starting application...")
+	log.Println("Starting program")
+	ctx := context.Background()
 
-	ctx, cancel := chromedp.NewContext(context.Background())
-	defer cancel()
+	log.Println("Getting channel ID")
+	channelID := getChannelID()
 
-	videoURL, _, err := getLatestVideoURL(ctx)
-	handleFatalError(err, "get latest video URL error")
+	log.Println("Getting API key")
+	apiKey := getAPIKey()
 
-	var history []string
-	file, err := os.ReadFile(historyFilePath)
-	if err == nil {
-		log.Println("Reading history file...")
-		json.Unmarshal(file, &history)
-	} else if !os.IsNotExist(err) {
-		log.Fatalf("Error reading history file: %v", err)
+	log.Println("Getting YouTube service")
+	service := getYouTubeService(ctx, apiKey)
+
+	log.Println("Getting latest video from channel")
+	response := getLatestVideoFromChannel(service, channelID)
+
+	if len(response.Items) == 0 {
+		log.Println("No new videos found.")
+		return
 	}
 
-	for _, v := range history {
-		if v == videoURL {
-			log.Println("No new videos to download.")
-			return
-		}
+	latestVideoDate := response.Items[0].Snippet.PublishedAt
+	lastDownloadDate := readLastDownloadDate()
+
+	if latestVideoDate == lastDownloadDate {
+		log.Println("No new videos found.")
+		return
 	}
 
-	log.Println("Updating history file...")
-	history = append(history, videoURL)
-	file, err = json.Marshal(history)
-	handleFatalError(err, "Error marshalling history data")
+	videoID := response.Items[0].Id.VideoId
+	client := ytdl.Client{}
 
-	err = os.WriteFile(historyFilePath, file, 0644)
-	handleFatalError(err, "Error writing history file")
+	log.Println("Getting video details")
+	video := getVideoDetails(ctx, client, videoID)
 
-	downloadVideo(ctx, videoURL)
+	log.Println("Getting video stream")
+	stream := getVideoStream(ctx, client, video)
+
+	log.Println("Reading stream into buffer")
+	buf := readStreamIntoBuffer(stream)
+
+	log.Println("Writing buffer to file")
+	writeBufferToFile(video.Title, buf)
+
+	log.Println("Video downloaded successfully: " + video.Title + ".mp4")
+	writeLastDownloadDate(latestVideoDate)
+}
+
+func getChannelID() string {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter the channel ID: ")
+	channelID, err := reader.ReadString('\n')
+	if err != nil {
+		log.Fatalf("Error reading channel ID: %v", err)
+	}
+	return channelID[:len(channelID)-1]
+}
+
+func getAPIKey() string {
+	apiKey := os.Getenv("YOUTUBE_API_KEY")
+	if apiKey == "" {
+		log.Fatalf("Error reading YOUTUBE_API_KEY environment variable")
+	}
+	return apiKey
+}
+
+func getYouTubeService(ctx context.Context, apiKey string) *youtube.Service {
+	service, err := youtube.NewService(ctx, option.WithAPIKey(apiKey))
+	if err != nil {
+		log.Fatalf("Error creating new YouTube client: %v", err)
+	}
+	return service
+}
+
+func getLatestVideoFromChannel(service *youtube.Service, channelID string) *youtube.SearchListResponse {
+	call := service.Search.List([]string{"id", "snippet"}).
+		ChannelId(channelID).
+		Order("date").
+		MaxResults(1)
+
+	response, err := call.Do()
+	if err != nil {
+		log.Fatalf("Error making search API call: %v", err)
+	}
+	return response
+}
+
+func getVideoDetails(ctx context.Context, client ytdl.Client, videoID string) *ytdl.Video {
+	video, err := client.GetVideoContext(ctx, videoID)
+	if err != nil {
+		log.Fatalf("Error getting video details: %v", err)
+	}
+	return video
+}
+
+func getVideoStream(ctx context.Context, client ytdl.Client, video *ytdl.Video) io.ReadCloser {
+	stream, _, err := client.GetStreamContext(ctx, video, &video.Formats[0])
+	if err != nil {
+		log.Fatalf("Error getting video stream: %v", err)
+	}
+	return stream
+}
+
+func readStreamIntoBuffer(stream io.ReadCloser) []byte {
+	buf, err := ioutil.ReadAll(stream)
+	if err != nil {
+		log.Fatalf("Error reading video stream: %v", err)
+	}
+	return buf
+}
+
+func writeBufferToFile(title string, buf []byte) {
+	if _, err := os.Stat("videos/"); os.IsNotExist(err) {
+		os.Mkdir("videos/", 0755)
+	}
+
+	file, err := os.Create("videos/" + title + ".mp4")
+	if err != nil {
+		log.Fatalf("Error creating file: %v", err)
+	}
+
+	_, err = file.Write(buf)
+	if err != nil {
+		log.Fatalf("Error writing to file: %v", err)
+	}
+
+	err = file.Close()
+	if err != nil {
+		log.Fatalf("Error closing file: %v", err)
+	}
+}
+
+func readLastDownloadDate() string {
+	data, err := ioutil.ReadFile("last_download.txt")
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func writeLastDownloadDate(date string) {
+	err := ioutil.WriteFile("last_download.txt", []byte(date), 0644)
+	if err != nil {
+		log.Fatalf("Error writing to last_download.txt: %v", err)
+	}
 }
