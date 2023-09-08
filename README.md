@@ -127,8 +127,6 @@ This project is open-source and available under the MIT License.
 
 ---
 
-I hope this README.md serves your needs, Marcus. Let me know if there are any specific sections or details you'd like added or changed.
-
 ## Contributing
 
 Feel free to contribute to this project by opening issues or submitting pull requests.
