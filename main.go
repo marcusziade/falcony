@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -19,7 +17,7 @@ func main() {
 	ctx := context.Background()
 
 	log.Println("Getting channel ID")
-	channelID := getChannelID()
+	channelID := "UCdlRNHC2zbCfTlpSiXKcDLg"
 
 	log.Println("Getting API key")
 	apiKey := getAPIKey()
@@ -60,16 +58,6 @@ func main() {
 
 	log.Println("Video downloaded successfully: " + video.Title + ".mp4")
 	writeLastDownloadDate(latestVideoDate)
-}
-
-func getChannelID() string {
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Enter the channel ID: ")
-	channelID, err := reader.ReadString('\n')
-	if err != nil {
-		log.Fatalf("Error reading channel ID: %v", err)
-	}
-	return channelID[:len(channelID)-1]
 }
 
 func getAPIKey() string {
