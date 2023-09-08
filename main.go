@@ -11,6 +11,10 @@ import (
 )
 
 func main() {
+	if _, err := os.Stat("videos"); os.IsNotExist(err) {
+		os.Mkdir("videos", 0755)
+	}
+
 	log.Println("Starting program")
 	ctx := context.Background()
 
@@ -52,7 +56,7 @@ func main() {
 }
 
 func downloadVideo(videoID string) error {
-	cmd := exec.Command("yt-dlp", "-S", "ext:mp4:m4a", videoID)
+	cmd := exec.Command("yt-dlp", "-S", "ext:mp4:m4a", "-o", "videos/%(title)s.%(ext)s", videoID)
 	err := cmd.Run()
 	return err
 }
