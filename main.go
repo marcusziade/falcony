@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 
@@ -106,7 +105,7 @@ func getVideoStream(ctx context.Context, client ytdl.Client, video *ytdl.Video) 
 }
 
 func readStreamIntoBuffer(stream io.ReadCloser) []byte {
-	buf, err := ioutil.ReadAll(stream)
+	buf, err := io.ReadAll(stream)
 	if err != nil {
 		log.Fatalf("Error reading video stream: %v", err)
 	}
@@ -135,7 +134,7 @@ func writeBufferToFile(title string, buf []byte) {
 }
 
 func readLastDownloadDate() string {
-	data, err := ioutil.ReadFile("last_download.txt")
+	data, err := os.ReadFile("last_download.txt")
 	if err != nil {
 		return ""
 	}
@@ -143,7 +142,7 @@ func readLastDownloadDate() string {
 }
 
 func writeLastDownloadDate(date string) {
-	err := ioutil.WriteFile("last_download.txt", []byte(date), 0644)
+	err := os.WriteFile("last_download.txt", []byte(date), 0644)
 	if err != nil {
 		log.Fatalf("Error writing to last_download.txt: %v", err)
 	}
