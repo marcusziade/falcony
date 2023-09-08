@@ -48,9 +48,14 @@ To run this application, you need to set the following environment variable:
    ```
 4. Add the following line to run the container daily at a specific time (e.g., at 2 am):
    ```
-   0 2 * * * docker run youtube-video-downloader
+   0 0,12 * * * docker run -e YOUTUBE_API_KEY='your-youtube-api-key' -d my-golang-app
    ```
 5. Save and exit the crontab file. The docker container will now run daily at the specified time.
+6. You can run it once now: `0 0,12 * * * docker run -e YOUTUBE_API_KEY='your-youtube-api-key' -d my-golang-app`. It will appear in Docker's desktop app where you can run it 
+7. If you want to mount storage to the Docker automation:
+```
+docker run -e YOUTUBE_API_KEY='your-youtube-api-key' -v /yourpathyouwantToSave:/app/videos -d falcony
+```
 
 ## Application Flow
 ### README.md
